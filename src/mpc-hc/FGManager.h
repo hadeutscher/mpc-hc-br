@@ -61,6 +61,8 @@ protected:
     CComPtr<IFilterMapper2> m_pFM;
     CInterfaceList<IUnknown, &IID_IUnknown> m_pUnks;
     CAtlList<CFGFilter*> m_source, m_transform, m_override;
+	IBDNav * m_pBDNav;
+	STDMETHODIMP GetBlurayNavigation(IBDNav ** ppNav);
 
     static bool CheckBytes(HANDLE hFile, CString chkbytes);
 

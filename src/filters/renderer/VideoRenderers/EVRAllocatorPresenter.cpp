@@ -23,6 +23,7 @@
 #include "EVRAllocatorPresenter.h"
 #include "OuterEVR.h"
 #include <Mferror.h>
+#include <InitGuid.h>
 #include "IPinHook.h"
 #include "MacrovisionKicker.h"
 #include "IMPCVideoDecFilter.h"
@@ -43,6 +44,10 @@ enum EVR_STATS_MSG {
 // Guid to tag IMFSample with DirectX surface index
 static const GUID GUID_SURFACE_INDEX = { 0x30c8e9f6, 0x415, 0x4b81, { 0xa3, 0x15, 0x1, 0xa, 0xc6, 0xa9, 0xda, 0x19 } };
 
+DEFINE_GUID(CLSID_EVRCustomMixer,
+	0x37B6E8FA, 0x26BE, 0x4CFC, 0x8E, 0xAB, 0x93, 0x7B, 0xDB, 0xCC, 0xD8, 0x71);
+DEFINE_GUID(CLSID_EnhancedVideoRenderer,
+	0xfa10746c, 0x9b63, 0x4b6c, 0xbc, 0x49, 0xfc, 0x30, 0xe, 0xa5, 0xf2, 0x56);
 
 // === Helper functions
 MFOffset MakeOffset(float v)
@@ -94,6 +99,8 @@ CEVRAllocatorPresenter::CEVRAllocatorPresenter(HWND hWnd, bool bFullscreen, HRES
     , m_dwVideoAspectRatioMode(MFVideoARMode_PreservePicture)
     , m_dwVideoRenderPrefs((MFVideoRenderPrefs)0)
     , m_BorderColor(RGB(0, 0, 0))
+	, m_hD3DDevice(NULL)
+	, m_pD3DDevice(NULL)
     , m_bSignaledStarvation(false)
     , m_StarvationClock(0)
     , m_pOuterEVR(nullptr)
@@ -347,8 +354,13 @@ STDMETHODIMP CEVRAllocatorPresenter::CreateRenderer(IUnknown** ppRenderer)
     if (SUCCEEDED(hr)) {
         hr = QueryInterface(IID_PPV_ARGS(&pVP));
     }
+	CComPtr<IMFTransform> pMixer = NULL;
+	if (SUCCEEDED(hr))
+	{
+		hr = CoCreateInstance(CLSID_EVRCustomMixer, NULL, CLSCTX_INPROC_SERVER, __uuidof(IMFTransform), (void **)&pMixer);
+	}
     if (SUCCEEDED(hr)) {
-        hr = pMFVR->InitializeRenderer(nullptr, pVP);
+        hr = pMFVR->InitializeRenderer(pMixer, pVP);
     }
 
 #if 1
@@ -370,9 +382,54 @@ STDMETHODIMP CEVRAllocatorPresenter::CreateRenderer(IUnknown** ppRenderer)
     return hr;
 }
 
+#define IF_FAILED_RETURN(HR1, HR2) if (FAILED(HR1)) { return HR2; }
+
+STDMETHODIMP CEVRAllocatorPresenter::LockTestD3DDevice()
+{
+	HRESULT hr;
+
+	if (m_hD3DDevice != NULL)
+	{
+		hr = TestDevice(m_hD3DDevice);
+		if (hr == DXVA2_E_NEW_VIDEO_DEVICE)
+		{
+			m_pD3DManager->UnlockDevice(m_hD3DDevice, TRUE);
+			m_pD3DManager->CloseDeviceHandle(m_hD3DDevice);
+			m_hD3DDevice = NULL;
+		}
+	}
+
+	if (m_hD3DDevice == NULL)
+	{
+		IF_FAILED_RETURN(hr = m_pD3DManager->OpenDeviceHandle(&m_hD3DDevice), hr);
+	}
+
+	IF_FAILED_RETURN(hr = m_pD3DManager->LockDevice(m_hD3DDevice, &m_pD3DDevice, TRUE), hr);
+
+	return hr;
+}
+
+STDMETHODIMP CEVRAllocatorPresenter::UnlockTestD3DDevice()
+{
+	SAFE_RELEASE(m_pD3DDevice);
+
+	CheckPointer(m_pD3DManager, E_NOINTERFACE);
+	CheckPointer(m_hD3DDevice, E_NOINTERFACE);
+
+	return m_pD3DManager->UnlockDevice(m_hD3DDevice, FALSE);
+	// NOTE we are not closing the device here, TODO close the device on class destruction
+}
+
 STDMETHODIMP_(bool) CEVRAllocatorPresenter::Paint(bool fAll)
 {
-    return __super::Paint(fAll);
+	if (FAILED(LockTestD3DDevice())) {
+		return false;
+	}
+	bool result = __super::Paint(fAll);
+	if (FAILED(UnlockTestD3DDevice())) {
+		return false;
+	}
+	return result;
 }
 
 STDMETHODIMP CEVRAllocatorPresenter::NonDelegatingQueryInterface(REFIID riid, void** ppv)

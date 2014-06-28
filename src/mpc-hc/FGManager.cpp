@@ -47,9 +47,13 @@
 // CFGManager
 //
 
+DEFINE_GUID(CLSID_DSLIBBLURAY,
+	0x336A1300, 0x76F2, 0x4F3C, 0xA8, 0x36, 0x0F, 0xED, 0x0A, 0x4A, 0xCB, 0xF7);
+
 CFGManager::CFGManager(LPCTSTR pName, LPUNKNOWN pUnk)
     : CUnknown(pName, pUnk)
     , m_dwRegister(0)
+	, m_pBDNav(NULL)
 {
     m_pUnkInner.CoCreateInstance(CLSID_FilterGraph, GetOwner());
     m_pFM.CoCreateInstance(CLSID_FilterMapper2);
@@ -69,6 +73,18 @@ CFGManager::~CFGManager()
     }
     m_pUnks.RemoveAll();
     m_pUnkInner.Release();
+}
+
+STDMETHODIMP CFGManager::GetBlurayNavigation(IBDNav ** ppNav)
+{
+	if (m_pBDNav == NULL) {
+		*ppNav = NULL;
+		return E_NOTIMPL;
+	}
+	else {
+		*ppNav = m_pBDNav;
+		return S_OK;
+	}
 }
 
 STDMETHODIMP CFGManager::NonDelegatingQueryInterface(REFIID riid, void** ppv)
@@ -218,6 +234,9 @@ HRESULT CFGManager::EnumSourceFilters(LPCWSTR lpcwstrFileName, CFGFilterList& fl
     if (ext == _T(".dvr-ms") || ext == _T(".wtv")) { // doh, this is stupid
         fl.Insert(LookupFilterRegistry(CLSID_StreamBufferSource, m_override, MERIT64_PREFERRED), 0);
     }
+	else if (ext == _T(".bdmv")) {
+		fl.Insert(LookupFilterRegistry(CLSID_DSLIBBLURAY, m_override, MERIT64_PREFERRED + 1), 0);
+	}
 
     TCHAR buff[256];
     ULONG len;
@@ -928,6 +947,9 @@ STDMETHODIMP CFGManager::RenderFile(LPCWSTR lpcwstrFileName, LPCWSTR lpcwstrPlay
             m_deadends.RemoveAll();
 
             if (SUCCEEDED(hr = ConnectFilter(pBF, nullptr))) {
+				if (FAILED(pBF->QueryInterface(IID_IBDNav, (void**)&m_pBDNav))) {
+					m_pBDNav = NULL;
+				}
                 return hr;
             }
 

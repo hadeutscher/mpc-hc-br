@@ -620,9 +620,38 @@ const TCHAR* GetEventString(LONG evCode)
             UNPACK_VALUE(EC_DVD_SPRM_Change);
             UNPACK_VALUE(EC_DVD_BeginNavigationCommands);
             UNPACK_VALUE(EC_DVD_NavigationCommand);
-            // Sound device error event codes
-            UNPACK_VALUE(EC_SNDDEV_IN_ERROR);
-            UNPACK_VALUE(EC_SNDDEV_OUT_ERROR);
+			// Sound device error event codes
+			//UNPACK_VALUE(EC_SNDDEV_IN_ERROR);
+			//UNPACK_VALUE(EC_SNDDEV_OUT_ERROR);
+			//BluRay event codes
+			UNPACK_VALUE(BD_EVENT_None);
+			UNPACK_VALUE(BD_EVENT_Error);
+			UNPACK_VALUE(BD_EVENT_Read_Error);
+			UNPACK_VALUE(BD_EVENT_Encrypted);
+			UNPACK_VALUE(BD_EVENT_Angle);
+			UNPACK_VALUE(BD_EVENT_Title);
+			UNPACK_VALUE(BD_EVENT_Playlist);
+			UNPACK_VALUE(BD_EVENT_Playitem);
+			UNPACK_VALUE(BD_EVENT_Chapter);
+			UNPACK_VALUE(BD_EVENT_End_Of_Title);
+			UNPACK_VALUE(BD_EVENT_Audio_Stream);
+			UNPACK_VALUE(BD_EVENT_IG_Stream);
+			UNPACK_VALUE(BD_EVENT_PG_Textst_Stream);
+			UNPACK_VALUE(BD_EVENT_PIP_PG_Textst_Stream);
+			UNPACK_VALUE(BD_EVENT_Secondary_Audio_Stream);
+			UNPACK_VALUE(BD_EVENT_Secondary_Video_Stream);
+			UNPACK_VALUE(BD_EVENT_PG_Textst);
+			UNPACK_VALUE(BD_EVENT_PIP_PG_Textst);
+			UNPACK_VALUE(BD_EVENT_Secondary_Audio);
+			UNPACK_VALUE(BD_EVENT_Secondary_Video);
+			UNPACK_VALUE(BD_EVENT_Secondary_Video_Size);
+			UNPACK_VALUE(BD_EVENT_Seek);
+			UNPACK_VALUE(BD_EVENT_Still);
+			UNPACK_VALUE(BD_EVENT_Still_Time);
+			UNPACK_VALUE(BD_EVENT_Sound_Effect);
+			UNPACK_VALUE(BD_EVENT_Popup);
+			UNPACK_VALUE(BD_EVENT_Menu);
+			UNPACK_VALUE(BD_EVENT_Stereoscopic_Status);
             // Custom event codes
             UNPACK_VALUE(EC_BG_AUDIO_CHANGED);
             UNPACK_VALUE(EC_BG_ERROR);
@@ -761,6 +790,7 @@ CMainFrame::CMainFrame()
     , m_fSetChannelActive(false)
     , m_dLastVideoScaleFactor(0)
     , m_nLastVideoWidth(0)
+	, m_pBDNav(NULL)
 {
     m_Lcd.SetVolumeRange(0, 100);
     m_liLastSaveTime.QuadPart = 0;
@@ -1150,7 +1180,38 @@ BOOL CMainFrame::PreCreateWindow(CREATESTRUCT& cs)
 
 BOOL CMainFrame::PreTranslateMessage(MSG* pMsg)
 {
-    if (pMsg->message == WM_KEYDOWN) {
+	if (m_pBDNav) {
+		if (pMsg->message == WM_KEYDOWN)
+		{
+			ULONG keyCode;
+
+			switch (pMsg->wParam)
+			{
+			case VK_LEFT:
+				keyCode = BD_KEY_Left;
+				break;
+			case VK_RIGHT:
+				keyCode = BD_KEY_Right;
+				break;
+			case VK_UP:
+				keyCode = BD_KEY_Up;
+				break;
+			case VK_DOWN:
+				keyCode = BD_KEY_Down;
+				break;
+			case VK_RETURN:
+				keyCode = BD_KEY_Enter;
+				break;
+			default:
+				return FALSE;
+			}
+
+			if (SUCCEEDED(m_pBDNav->KeyInput(keyCode))) {
+				return TRUE;
+			}
+		}
+	}
+	else if (pMsg->message == WM_KEYDOWN) {
         /*if (m_fShockwaveGraph
           && (pMsg->wParam == VK_LEFT || pMsg->wParam == VK_RIGHT
               || pMsg->wParam == VK_UP || pMsg->wParam == VK_DOWN))
@@ -1760,7 +1821,23 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
 {
     switch (nIDEvent) {
         case TIMER_STREAMPOSPOLLER:
-            if (GetLoadState() == MLS::LOADED) {
+			if (m_pBDNav) {
+				REFERENCE_TIME rtNow = 0, rtDur = 0;
+				BDPlaybackLocation Location;
+				if (SUCCEEDED(m_pBDNav->GetTotalTitleTime(&rtDur)) && SUCCEEDED(m_pBDNav->GetCurrentLocation(&Location))) {
+					rtNow = Location.TimeCode;
+				}
+				g_bNoDuration = rtDur <= 0;
+				m_wndSeekBar.Enable(rtDur > 0);
+				m_wndSeekBar.SetRange(0, rtDur);
+				m_wndSeekBar.SetPos(rtNow);
+				m_OSD.SetRange(0, rtDur);
+				m_OSD.SetPos(rtNow);
+				m_Lcd.SetMediaRange(0, rtDur);
+				m_Lcd.SetMediaPos(rtNow);
+			}
+
+			else if (GetLoadState() == MLS::LOADED) {
                 REFERENCE_TIME rtNow = 0, rtDur = 0;
 
                 if (GetPlaybackMode() == PM_FILE) {
@@ -8444,6 +8521,11 @@ void CMainFrame::OnNavigateMenu(UINT nID)
 {
     nID -= ID_NAVIGATE_TITLEMENU;
 
+	if (m_pBDNav) {
+		m_pBDNav->ShowMenu(); //BluRay only has 1 kind of menu
+		return;
+	}
+
     if (GetLoadState() != MLS::LOADED || GetPlaybackMode() != PM_DVD) {
         return;
     }
@@ -8461,6 +8543,11 @@ void CMainFrame::OnUpdateNavigateMenu(CCmdUI* pCmdUI)
 {
     UINT nID = pCmdUI->m_nID - ID_NAVIGATE_TITLEMENU;
     ULONG ulUOPs;
+
+	if (m_pBDNav) {
+		pCmdUI->Enable(TRUE);
+		return;
+	}
 
     if (GetLoadState() != MLS::LOADED || GetPlaybackMode() != PM_DVD
             || FAILED(m_pDVDI->GetCurrentUOPS(&ulUOPs))) {
@@ -8575,6 +8662,10 @@ void CMainFrame::OnNavigateMenuItem(UINT nID)
 
 void CMainFrame::OnUpdateNavigateMenuItem(CCmdUI* pCmdUI)
 {
+	if (m_pBDNav) {
+		pCmdUI->Enable(TRUE);
+		return;
+	}
     pCmdUI->Enable((GetLoadState() == MLS::LOADED) && ((GetPlaybackMode() == PM_DVD) || (GetPlaybackMode() == PM_FILE)));
 }
 
@@ -10332,6 +10423,10 @@ void CMainFrame::OpenFile(OpenFileData* pOFD)
         }
 
         HRESULT hr = m_pGB->RenderFile(CStringW(fn), nullptr);
+
+		if (FAILED(m_pGB->GetBlurayNavigation(&m_pBDNav))) {
+			m_pBDNav = NULL;
+		}
 
         if (bMainFile) {
             // Don't try to save file position if source isn't seekable
@@ -13738,12 +13833,17 @@ void CMainFrame::SeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
     }
 
     if (GetPlaybackMode() == PM_FILE) {
-        if (fs == State_Stopped) {
-            SendMessage(WM_COMMAND, ID_PLAY_PAUSE);
-        }
+		if (m_pBDNav) {
+			m_pBDNav->PlayAtTime(&rtPos);
+		}
+		else {
+			if (fs == State_Stopped) {
+				SendMessage(WM_COMMAND, ID_PLAY_PAUSE);
+			}
 
-        m_pMS->SetPositions(&rtPos, AM_SEEKING_AbsolutePositioning, nullptr, AM_SEEKING_NoPositioning);
-        UpdateChapterInInfoBar();
+			m_pMS->SetPositions(&rtPos, AM_SEEKING_AbsolutePositioning, nullptr, AM_SEEKING_NoPositioning);
+			UpdateChapterInInfoBar();
+		}
     } else if (GetPlaybackMode() == PM_DVD && m_iDVDDomain == DVD_DOMAIN_Title) {
         if (fs != State_Running) {
             SendMessage(WM_COMMAND, ID_PLAY_PLAY);

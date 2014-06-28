@@ -178,6 +178,7 @@ public:
 private:
     EventClient m_eventc;
     void EventCallback(MpcEvent ev);
+	IBDNav * m_pBDNav;
 
     enum {
         TIMER_STREAMPOSPOLLER = 1,

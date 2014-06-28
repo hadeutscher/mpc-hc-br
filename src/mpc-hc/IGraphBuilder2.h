@@ -20,6 +20,7 @@
  */
 
 #pragma once
+#include "IBDNav.h"
 
 interface __declspec(uuid("165BE9D6-0929-4363-9BA3-580D735AA0F6"))
 IGraphBuilder2 :
@@ -33,6 +34,7 @@ public IFilterGraph2 {
     STDMETHOD(FindInterface)(REFIID iid, void** ppv, BOOL bRemove) PURE;
     STDMETHOD(AddToROT)() PURE;
     STDMETHOD(RemoveFromROT)() PURE;
+	STDMETHOD(GetBlurayNavigation)(IBDNav ** ppNav) { return E_NOTIMPL; };
 };
 
 // private use only

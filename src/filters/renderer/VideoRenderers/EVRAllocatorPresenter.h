@@ -72,6 +72,8 @@ namespace DSObjects
         STDMETHODIMP InitializeDevice(IMFMediaType* pMediaType);
         STDMETHODIMP_(bool) ResetDevice();
         STDMETHODIMP_(bool) DisplayChange();
+		STDMETHODIMP LockTestD3DDevice();
+		STDMETHODIMP UnlockTestD3DDevice();
 
         // IMFClockStateSink
         STDMETHODIMP OnClockStart(/* [in] */ MFTIME hnsSystemTime, /* [in] */ LONGLONG llClockStartOffset);
@@ -229,6 +231,8 @@ namespace DSObjects
         UINT                             m_pcFramesDrawn;    // Retrieves the number of frames drawn since streaming started
         UINT                             m_piAvg;
         UINT                             m_piDev;
+		HANDLE							 m_hD3DDevice;
+		IDirect3DDevice9*				 m_pD3DDevice;
 
 
         void                             GetMixerThread();
